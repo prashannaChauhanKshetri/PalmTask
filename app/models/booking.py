@@ -3,7 +3,7 @@
 import uuid
 from datetime import date, datetime, time
 
-from sqlalchemy import Date, ForeignKey, String, Text, Time, text
+from sqlalchemy import Date, ForeignKey, String, Text, Time, text, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,7 +42,7 @@ class Booking(Base):
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
-        server_default=text("now()"),
+        server_default=func.now(),
     )
 
     # ── Relationships ───────────────────────────────────────

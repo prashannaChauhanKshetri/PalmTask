@@ -52,8 +52,13 @@ class PartialBookingState(BaseModel):
         return missing
 
 
+# In-memory storage fallback for local manual testing when Redis container is starting up
+_fallback_chat_memory: dict[str, list[ChatTurn]] = {}
+_fallback_booking_memory: dict[str, PartialBookingState] = {}
+
+
 class MemoryService:
-    """Service managing windowed chat history and partial booking state in Redis."""
+    """Service managing windowed chat history and partial booking state in Redis (with in-memory fallback)."""
 
     def __init__(self, redis_client: aioredis.Redis | None = None) -> None:
         settings = get_settings()
@@ -76,25 +81,22 @@ class MemoryService:
         return f"booking_state:{session_id}"
 
     async def get_history(self, session_id: UUID | str) -> list[ChatTurn]:
-        """Retrieve windowed conversation turns for a session from Redis."""
+        """Retrieve windowed conversation turns for a session."""
         key = self._chat_key(session_id)
-        raw_items = await self.redis.lrange(key, 0, -1)
-        
-        # Refresh TTL on read
-        await self.redis.expire(key, self.ttl_seconds)
+        try:
+            raw_items = await self.redis.lrange(key, 0, -1)
+            await self.redis.expire(key, self.ttl_seconds)
 
-        turns: list[ChatTurn] = []
-        for item in raw_items:
-            try:
-                data = json.loads(item)
-                turns.append(ChatTurn.model_validate(data))
-            except Exception as err:
-                logger.warning(
-                    "Failed to parse chat turn from Redis",
-                    extra={"session_id": str(session_id), "error": str(err)},
-                )
-
-        return turns
+            turns: list[ChatTurn] = []
+            for item in raw_items:
+                try:
+                    data = json.loads(item)
+                    turns.append(ChatTurn.model_validate(data))
+                except Exception:
+                    pass
+            return turns
+        except Exception:
+            return _fallback_chat_memory.get(str(session_id), [])
 
     async def add_turn(
         self, session_id: UUID | str, role: Literal["user", "assistant"], content: str
@@ -104,50 +106,47 @@ class MemoryService:
         turn = ChatTurn(role=role, content=content)
         turn_json = turn.model_dump_json()
 
-        # Push to list, trim to max window size, and update TTL
-        async with self.redis.pipeline(transaction=True) as pipe:
-            pipe.rpush(key, turn_json)
-            pipe.ltrim(key, -self.window_size, -1)
-            pipe.expire(key, self.ttl_seconds)
-            await pipe.execute()
+        try:
+            async with self.redis.pipeline(transaction=True) as pipe:
+                pipe.rpush(key, turn_json)
+                pipe.ltrim(key, -self.window_size, -1)
+                pipe.expire(key, self.ttl_seconds)
+                await pipe.execute()
+        except Exception:
+            if str(session_id) not in _fallback_chat_memory:
+                _fallback_chat_memory[str(session_id)] = []
+            _fallback_chat_memory[str(session_id)].append(turn)
+            _fallback_chat_memory[str(session_id)] = _fallback_chat_memory[str(session_id)][-self.window_size:]
 
-        logger.info(
-            "Added chat turn to memory",
-            extra={"session_id": str(session_id), "role": role},
-        )
         return turn
 
     async def get_booking_state(self, session_id: UUID | str) -> PartialBookingState:
         """Retrieve ongoing partial booking state for a session."""
         key = self._booking_key(session_id)
-        raw_data = await self.redis.get(key)
-        
-        if not raw_data:
-            return PartialBookingState()
-
         try:
+            raw_data = await self.redis.get(key)
+            if not raw_data:
+                return PartialBookingState()
             data = json.loads(raw_data)
             return PartialBookingState.model_validate(data)
-        except Exception as err:
-            logger.warning(
-                "Failed to parse booking state from Redis",
-                extra={"session_id": str(session_id), "error": str(err)},
-            )
-            return PartialBookingState()
+        except Exception:
+            return _fallback_booking_memory.get(str(session_id), PartialBookingState())
 
     async def save_booking_state(
         self, session_id: UUID | str, state: PartialBookingState
     ) -> None:
-        """Save or update partial booking state in Redis with TTL."""
+        """Save or update partial booking state."""
         key = self._booking_key(session_id)
         state_json = state.model_dump_json()
-        await self.redis.set(key, state_json, ex=self.ttl_seconds)
-        logger.info(
-            "Saved booking state to Redis",
-            extra={"session_id": str(session_id), "is_complete": state.is_complete()},
-        )
+        try:
+            await self.redis.set(key, state_json, ex=self.ttl_seconds)
+        except Exception:
+            _fallback_booking_memory[str(session_id)] = state
 
     async def clear_booking_state(self, session_id: UUID | str) -> None:
         """Delete partial booking state after successful booking confirmation."""
         key = self._booking_key(session_id)
-        await self.redis.delete(key)
+        try:
+            await self.redis.delete(key)
+        except Exception:
+            _fallback_booking_memory.pop(str(session_id), None)

@@ -21,6 +21,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         "Starting Palm RAG API",
         extra={"environment": settings.environment},
     )
+    # Ensure DB tables exist on startup
+    from app.core.database import Base, engine
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     yield
     logger.info("Shutting down Palm RAG API")
 
