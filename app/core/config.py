@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # ── Pinecone ────────────────────────────────────────
     pinecone_api_key: str = ""
     pinecone_index_name: str = "palm-rag"
-    pinecone_host: str = "https://palm-rag-8y3zdyr.svc.aped-4627-b05a.pinecone.io"
+    pinecone_host: str = "https://palm-rag-fepm9d6.svc.aped-4627-b74a.pinecone.io"
 
     # ── PostgreSQL ──────────────────────────────────────
     database_url: str = "postgresql+asyncpg://palm:palm@postgres:5432/palm"
