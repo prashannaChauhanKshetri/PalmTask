@@ -1,4 +1,4 @@
-"""Interview booking extraction service using Gemini structured outputs, dateparser, and email-validator."""
+"""Interview booking extraction service using OpenAI structured outputs, dateparser, and email-validator."""
 
 import json
 from dataclasses import dataclass, field

@@ -7,7 +7,7 @@ Implements a multi-stage retrieval pipeline:
   4. Contextual window expansion (fetch neighboring chunks N-1, N+1)
   5. Relevance-based de-duplication and re-ranking
   6. System prompt assembly with prompt engineering & safety guardrails
-  7. LLM response generation via Google Gemini
+  7. LLM response generation via OpenAI
 
 No LangChain or RetrievalQAChain abstractions — fully hand-crafted.
 """

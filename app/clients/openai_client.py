@@ -1,8 +1,6 @@
 """OpenAI API client wrapper for embedding generation with graceful fallback."""
 
-import hashlib
-import json
-import re
+
 from typing import Any
 from openai import AsyncOpenAI
 

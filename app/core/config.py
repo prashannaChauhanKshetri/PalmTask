@@ -14,8 +14,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # ── LLM Provider Configuration ────────────────────────
-    llm_provider: str = "auto"  # "openai" | "gemini" | "auto" (auto-fallback to demo mode if credits exhausted)
+
 
     # ── OpenAI ──────────────────────────────────────────
     openai_api_key: str = ""
@@ -23,9 +22,7 @@ class Settings(BaseSettings):
     openai_chat_model: str = "gpt-4o-mini"
     embedding_dimensions: int = 1536
 
-    # ── Gemini ──────────────────────────────────────────
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-flash-latest"
+
 
     # ── Pinecone ────────────────────────────────────────
     pinecone_api_key: str = ""

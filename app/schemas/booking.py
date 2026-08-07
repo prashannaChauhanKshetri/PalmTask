@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class LLMExtractedBooking(BaseModel):
-    """Structured JSON schema for Gemini-powered interview slot extraction."""
+    """Structured JSON schema for OpenAI-powered interview slot extraction."""
 
     name: str | None = Field(default=None, description="Candidate full name if mentioned")
     email: str | None = Field(default=None, description="Candidate email address if mentioned")
