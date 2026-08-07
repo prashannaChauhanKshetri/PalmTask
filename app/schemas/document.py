@@ -25,7 +25,7 @@ class DocumentResponse(BaseModel):
     id: UUID
     filename: str
     file_type: str
-    chunking_strategy: Literal["fixed", "recursive"]
+    chunking_strategy: Literal["fixed", "recursive", "hierarchical"]
     status: str
     total_chunks: int
     uploaded_at: datetime

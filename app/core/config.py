@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     # ── RAG tunables ────────────────────────────────────
     rag_top_k: int = 5
+    rag_score_threshold: float = 0.65
+    rag_contextual_window: bool = True
     chat_window_size: int = 10
     chat_ttl_seconds: int = 3600
 

@@ -66,8 +66,9 @@ async def chat_message(
     if booking_result.is_booking_intent:
         answer = booking_result.response_text
         sources: list[SourceMetadataSchema] = []
+        retrieval_stats: dict[str, int] = {}
     else:
-        # 4. Standard Custom RAG Pipeline Generation
+        # 4. Standard Custom RAG Pipeline Generation (with semantic search)
         rag = RAGGenerator()
         rag_output = await rag.generate_response(
             user_message=payload.message,
@@ -83,6 +84,10 @@ async def chat_message(
             )
             for src in rag_output.sources
         ]
+        retrieval_stats = {
+            "filtered_count": rag_output.filtered_count,
+            "expanded_count": rag_output.expanded_count,
+        }
 
     # 5. Append turn pair to Redis chat memory
     await memory_service.add_turn(session_id, "user", payload.message)
@@ -95,6 +100,7 @@ async def chat_message(
         session_id=session_id,
         answer=answer,
         sources=sources,
+        retrieval_stats=retrieval_stats,
     )
 
 

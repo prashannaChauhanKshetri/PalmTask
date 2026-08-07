@@ -36,6 +36,10 @@ class ChatResponse(BaseModel):
     session_id: UUID
     answer: str
     sources: list[SourceMetadataSchema] = Field(default_factory=list)
+    retrieval_stats: dict[str, int] = Field(
+        default_factory=dict,
+        description="Semantic search pipeline statistics: filtered_count, expanded_count.",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

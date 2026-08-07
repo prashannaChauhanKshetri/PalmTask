@@ -37,7 +37,7 @@ router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    chunking_strategy: Literal["fixed", "recursive"] = Form("fixed"),
+    chunking_strategy: Literal["fixed", "recursive", "hierarchical"] = Form("fixed"),
     chunk_size: int = Form(512),
     chunk_overlap: int = Form(50),
     db: AsyncSession = Depends(get_db),

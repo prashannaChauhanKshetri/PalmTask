@@ -54,10 +54,10 @@ palm_task/
 │   ├── schemas/             # Pydantic v2 request and response schemas
 │   ├── services/            # Core business logic:
 │   │   ├── extractors.py    # TextExtractor protocol (PyMuPDF & TXT charset fallback)
-│   │   ├── chunking.py      # Chunker protocol (Fixed token window & Recursive structure)
+│   │   ├── chunking.py      # Chunker protocol (Fixed, Recursive & Hierarchical strategies)
 │   │   ├── ingestion_service.py # Non-blocking background ingestion pipeline
 │   │   ├── memory_service.py # Redis windowed chat history (TTL) & partial booking state
-│   │   ├── rag_generator.py # Hand-crafted RAG generator with safety guardrails
+│   │   ├── rag_generator.py # Semantic RAG: score filter, context window, re-ranking
 │   │   └── booking_service.py # Structured slot extraction & validation
 │   └── main.py              # FastAPI app factory, lifespan hooks, health check
 ├── tests/                   # Complete Pytest test suite (100% mocked externals)
@@ -85,27 +85,66 @@ palm_task/
 
 ## 🧠 Chunking Strategies & Design Rationale
 
-The backend provides two distinct, pluggable chunking strategies matching the `Chunker` protocol:
+The backend provides **three** distinct, pluggable chunking strategies matching the `Chunker` protocol:
 
 1. **`fixed` (Token-Count Sliding Window)**:
    - Uses `tiktoken` (`cl100k_base`) to count exact tokens instead of naive character counts.
    - Default: `chunk_size=512` tokens, `chunk_overlap=50` tokens.
    - *Rationale*: Provides a deterministic baseline suitable for unstructured, non-hierarchical documents.
 
-2. **`recursive` (Structure-Aware Hierarchical Splitting)**:
+2. **`recursive` (Structure-Aware Recursive Splitting)**:
    - Hierarchically splits document text on paragraph boundaries (`\n\n`), then sentence boundaries (`[.!?]`), then words.
    - Recombines adjacent small fragments up to `chunk_size` while retaining `chunk_overlap`.
    - *Rationale*: Preserves paragraph context and semantic boundaries, preventing sentence truncation across chunk boundaries.
+
+3. **`hierarchical` (Section-Aware Chunking with Breadcrumb Context)** ✨:
+   - Detects document structure via markdown headers (`#`, `##`, `###`), numbered sections (`1.`, `1.2.`), and ALL-CAPS headings.
+   - Prepends hierarchical breadcrumb prefixes (e.g., `[Section: Architecture > API Layer]`) to each chunk.
+   - Falls back to recursive chunking for unstructured documents without detectable headers.
+   - *Rationale*: Each chunk carries its section lineage, dramatically improving retrieval quality for structured documents (technical docs, policies, manuals) since the LLM always knows *where* in the document a chunk originates.
+
+---
+
+## 🔍 Semantic Search Enhancements
+
+The RAG pipeline goes beyond basic top-k vector similarity with a **multi-stage semantic retrieval pipeline**:
+
+| Stage | Feature | Description |
+|---|---|---|
+| 1 | **Query Embedding** | Embeds user query via OpenAI `text-embedding-3-small` (1536-dim). |
+| 2 | **Vector Similarity** | Top-k nearest neighbor search in Pinecone (cosine metric). |
+| 3 | **Score Threshold Filtering** | Discards results below `RAG_SCORE_THRESHOLD` (default: 0.65) to eliminate noise. |
+| 4 | **Contextual Window Expansion** | Fetches neighboring chunks (N-1, N+1) for matched results to provide surrounding document context. |
+| 5 | **Document-Grouped Re-ranking** | Groups chunks by document, orders groups by best match score, preserves chunk order within groups for coherent context. |
+| 6 | **Prompt Assembly** | Assembles system prompt with safety guardrails and formatted context blocks. |
+| 7 | **LLM Generation** | `gpt-4o-mini` with temperature 0.2 for high precision. |
+
+The `retrieval_stats` field in the chat response exposes pipeline metrics:
+```json
+{
+  "retrieval_stats": {
+    "filtered_count": 2,
+    "expanded_count": 4
+  }
+}
+```
+
+Configurable via environment variables:
+```env
+RAG_SCORE_THRESHOLD=0.65
+RAG_CONTEXTUAL_WINDOW=true
+```
 
 ---
 
 ## 🛡️ AI Prompt Engineering & Safety Guardrails
 
-The RAG Generator ([app/services/rag_generator.py](file:///Users/prashanna/Desktop/palm_task/app/services/rag_generator.py)) is **100% hand-crafted** without any LangChain abstractions. It explicitly implements:
+The RAG Generator ([rag_generator.py](file:///Users/prashanna/Desktop/palm_task/app/services/rag_generator.py)) is **100% hand-crafted** without any LangChain abstractions. It explicitly implements:
 
 - **Strict Grounding**: System prompt strictly limits responses to facts present in retrieved document context.
 - **Hallucination Prevention**: Explicit instruction to reply *"I'm sorry, but I don't have enough information in the uploaded documents to answer that question."* if context is insufficient.
 - **Prompt Injection Defense**: Mandates ignoring user or document attempts to override rules or reveal system prompts.
+- **Contextual Coherence**: When multiple chunks from the same document are provided (via contextual window expansion), the LLM synthesizes them into a coherent answer.
 - **Source Attribution**: Returns source metadata (`document_id`, `chunk_index`, similarity score, and text preview) alongside every answer.
 
 ---

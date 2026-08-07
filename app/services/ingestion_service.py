@@ -35,7 +35,7 @@ class IngestionService:
         self,
         filename: str,
         content_type: str | None,
-        chunking_strategy: Literal["fixed", "recursive"],
+        chunking_strategy: Literal["fixed", "recursive", "hierarchical"],
     ) -> Document:
         """Validate document type and create initial DB record.
 
@@ -63,7 +63,7 @@ class IngestionService:
         file_bytes: bytes,
         filename: str,
         file_type: str,
-        chunking_strategy: Literal["fixed", "recursive"],
+        chunking_strategy: Literal["fixed", "recursive", "hierarchical"],
         chunk_size: int = 512,
         chunk_overlap: int = 50,
     ) -> None:
