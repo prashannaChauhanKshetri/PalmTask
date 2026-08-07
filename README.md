@@ -74,7 +74,7 @@ palm_task/
 | Layer | Technology | Key Decisions & Rationale |
 |---|---|---|
 | Framework | **FastAPI (Python 3.11+)** | Async native throughout for non-blocking I/O and automatic OpenAPI specs. |
-| Vector DB | **Pinecone (Serverless)** | Vector database with cosine similarity metric (1536-dim vectors). |
+| Vector DB | **Pinecone (Serverless)** | Vector database with `palm_namespace` isolation for multi-tenant document sets and cosine similarity metric (1536-dim vectors). |
 | Chat Memory | **Redis 7 (Alpine)** | Fast, in-memory windowed chat history (`chat:{session_id}`) with automatic TTL expiry. |
 | Relational DB | **PostgreSQL 16 + AsyncPG** | SQLAlchemy 2.0 declarative models with Alembic migrations for document/booking tracking. |
 | Embeddings | **OpenAI `text-embedding-3-small`** | Cost-effective, high-accuracy 1536-dimensional embeddings. |

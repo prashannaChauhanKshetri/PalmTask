@@ -38,6 +38,8 @@ def _cosine_similarity(v1: list[float], v2: list[float]) -> float:
 class PineconeClient:
     """Client wrapper for Pinecone Serverless vector database with in-memory fallback."""
 
+    NAMESPACE = "palm_namespace"
+
     def __init__(self, api_key: str | None = None, index_name: str | None = None) -> None:
         settings = get_settings()
         self.api_key = api_key or settings.pinecone_api_key
@@ -72,8 +74,8 @@ class PineconeClient:
             ]
             for i in range(0, len(formatted_vectors), batch_size):
                 batch = formatted_vectors[i : i + batch_size]
-                self.index.upsert(vectors=batch)
-            logger.info("Pinecone upsert completed", extra={"count": len(vectors)})
+                self.index.upsert(vectors=batch, namespace=self.NAMESPACE)
+            logger.info("Pinecone upsert completed", extra={"count": len(vectors), "namespace": self.NAMESPACE})
         except Exception as err:
             logger.warning(
                 "Pinecone upsert fallback to local vector store",
@@ -93,6 +95,7 @@ class PineconeClient:
                 top_k=top_k,
                 include_metadata=True,
                 filter=filter_dict,
+                namespace=self.NAMESPACE,
             )
 
             results: list[VectorSearchResult] = []
