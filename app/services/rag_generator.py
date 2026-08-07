@@ -1,13 +1,13 @@
 """Hand-written custom RAG generator with semantic search enhancements.
 
 Implements a multi-stage retrieval pipeline:
-  1. Query embedding via OpenAI
+  1. Query embedding via OpenAI text-embedding-3-small
   2. Top-k vector similarity search in Pinecone
   3. Score threshold filtering (discard low-relevance noise)
   4. Contextual window expansion (fetch neighboring chunks N-1, N+1)
   5. Relevance-based de-duplication and re-ranking
   6. System prompt assembly with prompt engineering & safety guardrails
-  7. LLM response generation via gpt-4o-mini
+  7. LLM response generation via Google Gemini
 
 No LangChain or RetrievalQAChain abstractions — fully hand-crafted.
 """
@@ -15,6 +15,7 @@ No LangChain or RetrievalQAChain abstractions — fully hand-crafted.
 from dataclasses import dataclass
 from typing import Any
 
+from app.clients.gemini_client import GeminiClient
 from app.clients.openai_client import OpenAIClient
 from app.clients.pinecone_client import PineconeClient, VectorSearchResult
 from app.core.config import get_settings
@@ -57,10 +58,12 @@ class RAGGenerator:
     def __init__(
         self,
         openai_client: OpenAIClient | None = None,
+        gemini_client: GeminiClient | None = None,
         pinecone_client: PineconeClient | None = None,
     ) -> None:
         settings = get_settings()
         self.openai_client = openai_client or OpenAIClient()
+        self.gemini_client = gemini_client or GeminiClient()
         self.pinecone_client = pinecone_client or PineconeClient()
         self.top_k = settings.rag_top_k
         self.score_threshold = settings.rag_score_threshold
@@ -235,13 +238,13 @@ Your mission is to assist users by answering their questions accurately based st
         """Run full semantic RAG pipeline with multi-stage retrieval.
 
         Pipeline stages:
-            1. Embed user query via OpenAI
+            1. Embed user query via OpenAI text-embedding-3-small
             2. Top-k vector similarity search in Pinecone
             3. Score threshold filtering (discard noise)
             4. Contextual window expansion (neighboring chunks)
             5. Re-ranking by relevance with document grouping
             6. System prompt assembly with guardrails
-            7. LLM generation via gpt-4o-mini
+            7. LLM generation via Google Gemini
 
         Args:
             user_message: Current user input message.
@@ -319,8 +322,8 @@ Your mission is to assist users by answering their questions accurately based st
         # Append current user query
         messages.append({"role": "user", "content": user_message})
 
-        # Call OpenAI gpt-4o-mini
-        answer = await self.openai_client.generate_chat_completion(
+        # Call Google Gemini for RAG answer generation
+        answer = await self.gemini_client.generate_chat_completion(
             messages=messages,
             temperature=0.2,  # Low temperature for high precision & low hallucination
         )

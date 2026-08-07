@@ -21,6 +21,7 @@ charset-normalizer==3.4.1
 
 # Embeddings & LLM
 openai==1.59.5
+google-generativeai==0.8.3
 tiktoken==0.8.0
 
 # Vector DB

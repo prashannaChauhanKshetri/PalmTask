@@ -32,22 +32,32 @@ class PartialBookingState(BaseModel):
     interview_date: str | None = None  # ISO format string YYYY-MM-DD
     interview_time: str | None = None  # ISO format string HH:MM:SS or HH:MM
 
+    def _is_valid_value(self, val: str | None) -> bool:
+        if not val:
+            return False
+        if val.lower().strip() in ("null", "none", "n/a", "not provided", "missing", "unknown"):
+            return False
+        return True
+
     def is_complete(self) -> bool:
         """Check if all 4 required booking fields are present."""
         return bool(
-            self.name and self.email and self.interview_date and self.interview_time
+            self._is_valid_value(self.name) and 
+            self._is_valid_value(self.email) and 
+            self._is_valid_value(self.interview_date) and 
+            self._is_valid_value(self.interview_time)
         )
 
     def missing_fields(self) -> list[str]:
         """Return list of field names that are still missing."""
         missing: list[str] = []
-        if not self.name:
+        if not self._is_valid_value(self.name):
             missing.append("name")
-        if not self.email:
+        if not self._is_valid_value(self.email):
             missing.append("email")
-        if not self.interview_date:
+        if not self._is_valid_value(self.interview_date):
             missing.append("interview date")
-        if not self.interview_time:
+        if not self._is_valid_value(self.interview_time):
             missing.append("interview time")
         return missing
 

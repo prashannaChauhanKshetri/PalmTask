@@ -1,4 +1,4 @@
-"""Interview booking extraction service using OpenAI structured outputs, dateparser, and email-validator."""
+"""Interview booking extraction service using Gemini structured outputs, dateparser, and email-validator."""
 
 import json
 from dataclasses import dataclass, field
@@ -9,7 +9,7 @@ from uuid import UUID
 import dateparser
 from email_validator import EmailNotValidError, validate_email
 
-from app.clients.openai_client import OpenAIClient
+from app.clients.gemini_client import GeminiClient
 from app.core.exceptions import BookingValidationError
 from app.core.logging import get_logger
 from app.models.booking import Booking
@@ -38,11 +38,11 @@ class BookingService:
         self,
         booking_repo: BookingRepository,
         memory_service: MemoryService,
-        openai_client: OpenAIClient | None = None,
+        gemini_client: GeminiClient | None = None,
     ) -> None:
         self.repo = booking_repo
         self.memory = memory_service
-        self.openai_client = openai_client or OpenAIClient()
+        self.gemini_client = gemini_client or GeminiClient()
 
     async def detect_intent_and_extract(
         self,
@@ -74,7 +74,7 @@ class BookingService:
 
         # Build prompt for LLM structured extraction
         conversation_context = "\n".join([f"{t.role}: {t.content}" for t in history])
-        if history and history[-1].content != user_message:
+        if not history or history[-1].content != user_message:
             conversation_context += f"\nuser: {user_message}"
 
         extraction_prompt = [
@@ -83,7 +83,11 @@ class BookingService:
                 "content": (
                     "You are a structured data extractor. Your job is to extract interview booking details "
                     "from the conversation context. Extract any candidate name, email address, requested date, "
-                    "and requested time. Return JSON strictly matching the schema."
+                    "and requested time. "
+                    "CRITICAL INSTRUCTIONS:\n"
+                    "1. If a detail is missing or not provided by the user, you MUST return the exact string 'null' for that field. Do NOT guess or hallucinate.\n"
+                    "2. If a date is provided (e.g. 'Next Monday', '9th to 15th Aug', 'tomorrow'), you MUST convert it to a standard 'YYYY-MM-DD' format based on the current year (assume 2026 if unclear). If it's a range, pick the first available date in the range.\n"
+                    "3. If a time is provided (e.g. '2-3pm', '10am'), you MUST convert it to a standard 24-hour 'HH:MM' format (e.g. '14:00', '10:00')."
                 ),
             },
             {
@@ -92,16 +96,29 @@ class BookingService:
             },
         ]
 
-        # Call OpenAI with json_schema structured output
-        raw_llm_output = await self.openai_client.generate_chat_completion(
+        booking_schema = {
+            "type": "OBJECT",
+            "properties": {
+                "name": {"type": "STRING"},
+                "email": {"type": "STRING"},
+                "interview_date": {"type": "STRING"},
+                "interview_time": {"type": "STRING"},
+            },
+        }
+
+        # Call Gemini with json_schema structured output
+        raw_llm_output = await self.gemini_client.generate_chat_completion(
             messages=extraction_prompt,
             temperature=0.0,
-            response_format={"type": "json_object"},
+            response_schema=booking_schema,
         )
 
         # Parse LLM output into Pydantic model
         try:
-            parsed_data = json.loads(raw_llm_output)
+            clean_output = raw_llm_output.strip()
+            if clean_output.startswith("```"):
+                clean_output = clean_output.split("\n", 1)[-1].rsplit("\n", 1)[0].strip()
+            parsed_data = json.loads(clean_output)
             extracted = LLMExtractedBooking.model_validate(parsed_data)
         except Exception as err:
             logger.warning("Failed to parse LLM extracted booking JSON", extra={"error": str(err)})
@@ -124,18 +141,20 @@ class BookingService:
         if missing:
             missing_str = ", ".join(missing)
             captured = []
-            if merged_state.name:
+            if merged_state._is_valid_value(merged_state.name):
                 captured.append(f"name: {merged_state.name}")
-            if merged_state.email:
+            if merged_state._is_valid_value(merged_state.email):
                 captured.append(f"email: {merged_state.email}")
-            if merged_state.interview_date:
+            if merged_state._is_valid_value(merged_state.interview_date):
                 captured.append(f"date: {merged_state.interview_date}")
-            if merged_state.interview_time:
+            if merged_state._is_valid_value(merged_state.interview_time):
                 captured.append(f"time: {merged_state.interview_time}")
 
+            captured_str = ", ".join(captured) if captured else "nothing yet"
             prompt_msg = (
-                f"I'd be happy to help schedule your interview! "
-                f"To complete your booking, please provide your {missing_str}."
+                f"Thank you! I'd be happy to help schedule your interview. "
+                f"So far I have: {captured_str}.\n"
+                f"Could you please also provide your {missing_str}?"
             )
             return BookingProcessResult(
                 is_booking_intent=True,
@@ -150,15 +169,18 @@ class BookingService:
         valid_time = self._parse_time(merged_state.interview_time)
 
         if not valid_email or not valid_date or not valid_time:
-            error_details = []
+            error_hints = []
             if not valid_email:
-                error_details.append("valid email address")
+                error_hints.append("a valid email address (e.g. name@company.com)")
             if not valid_date:
-                error_details.append("valid interview date")
+                error_hints.append("a recognizable date (e.g. '2026-08-15', 'next Monday', 'Aug 20')")
             if not valid_time:
-                error_details.append("valid interview time")
+                error_hints.append("a specific time (e.g. '14:00', '2:30 PM', '10am')")
 
-            retry_msg = f"Please double check your booking details: We need a valid {', '.join(error_details)}."
+            retry_msg = (
+                f"I couldn't quite parse some of your details. "
+                f"Could you please re-enter {', '.join(error_hints)}?"
+            )
             return BookingProcessResult(
                 is_booking_intent=True,
                 is_complete=False,
@@ -181,11 +203,12 @@ class BookingService:
         await self.memory.clear_booking_state(session_id)
 
         confirmation_text = (
-            f"🎉 Your interview has been successfully booked!\n"
+            f"✅ Your interview has been successfully booked! Here are your details:\n\n"
             f"• Name: {booking.name}\n"
             f"• Email: {booking.email}\n"
             f"• Date: {booking.interview_date.strftime('%Y-%m-%d')}\n"
-            f"• Time: {booking.interview_time.strftime('%H:%M')}\n"
+            f"• Time: {booking.interview_time.strftime('%H:%M')}\n\n"
+            f"You will receive a confirmation at your email address. "
             f"We look forward to speaking with you!"
         )
 

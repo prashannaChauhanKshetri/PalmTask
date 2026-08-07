@@ -1,4 +1,4 @@
-"""OpenAI API client wrapper for embedding generation and chat completions with graceful fallback."""
+"""OpenAI API client wrapper for embedding generation with graceful fallback."""
 
 import hashlib
 import json
@@ -32,7 +32,7 @@ def _synthesize_fallback_answer(messages: list[dict[str, str]], is_structured: b
     user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
     # Check if structured JSON output is requested
-    if is_structured or "interview" in system_msg.lower() or "slot" in system_msg.lower():
+    if is_structured:
         # Combine user message and system prompt for pattern matching
         full_text = f"{user_msg} {system_msg}"
 
@@ -116,7 +116,7 @@ class OpenAIClient:
         temperature: float = 0.2,
         response_format: Any | None = None,
     ) -> str:
-        """Generate LLM response using gpt-4o-mini with fallback for missing/exhausted credits."""
+        """Generate LLM response (legacy fallback path — primary chat uses GeminiClient)."""
         try:
             if not self.api_key or self.api_key.startswith("sk-dummy"):
                 raise ValueError("No valid OpenAI API key configured.")

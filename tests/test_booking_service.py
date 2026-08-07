@@ -19,16 +19,16 @@ async def test_booking_intent_extraction_partial() -> None:
     mock_memory.get_booking_state = AsyncMock(return_value=PartialBookingState())
     mock_memory.save_booking_state = AsyncMock()
 
-    mock_openai = AsyncMock()
+    mock_gemini = AsyncMock()
     # LLM extracts name and email first
-    mock_openai.generate_chat_completion = AsyncMock(
+    mock_gemini.generate_chat_completion = AsyncMock(
         return_value=json.dumps({"name": "Prashanna", "email": "prashanna@example.com"})
     )
 
     service = BookingService(
         booking_repo=mock_repo,
         memory_service=mock_memory,
-        openai_client=mock_openai,
+        gemini_client=mock_gemini,
     )
 
     session_id = uuid.uuid4()
@@ -72,8 +72,8 @@ async def test_booking_intent_extraction_complete() -> None:
     mock_memory.save_booking_state = AsyncMock()
     mock_memory.clear_booking_state = AsyncMock()
 
-    mock_openai = AsyncMock()
-    mock_openai.generate_chat_completion = AsyncMock(
+    mock_gemini = AsyncMock()
+    mock_gemini.generate_chat_completion = AsyncMock(
         return_value=json.dumps(
             {
                 "name": "Prashanna",
@@ -87,7 +87,7 @@ async def test_booking_intent_extraction_complete() -> None:
     service = BookingService(
         booking_repo=mock_repo,
         memory_service=mock_memory,
-        openai_client=mock_openai,
+        gemini_client=mock_gemini,
     )
 
     session_id = uuid.uuid4()

@@ -78,7 +78,7 @@ palm_task/
 | Chat Memory | **Redis 7 (Alpine)** | Fast, in-memory windowed chat history (`chat:{session_id}`) with automatic TTL expiry. |
 | Relational DB | **PostgreSQL 16 + AsyncPG** | SQLAlchemy 2.0 declarative models with Alembic migrations for document/booking tracking. |
 | Embeddings | **OpenAI `text-embedding-3-small`** | Cost-effective, high-accuracy 1536-dimensional embeddings. |
-| LLM | **OpenAI `gpt-4o-mini`** | Used for both RAG generation and multi-turn structured booking extraction. |
+| LLM | **Google Gemini (`gemini-flash-latest`)** | Used for RAG generation and multi-turn structured booking extraction via structured JSON output. |
 | Validation | **Pydantic v2 + dateparser + email-validator** | Robust runtime validation for extracted slots and requests. |
 
 ---
@@ -117,7 +117,7 @@ The RAG pipeline goes beyond basic top-k vector similarity with a **multi-stage 
 | 4 | **Contextual Window Expansion** | Fetches neighboring chunks (N-1, N+1) for matched results to provide surrounding document context. |
 | 5 | **Document-Grouped Re-ranking** | Groups chunks by document, orders groups by best match score, preserves chunk order within groups for coherent context. |
 | 6 | **Prompt Assembly** | Assembles system prompt with safety guardrails and formatted context blocks. |
-| 7 | **LLM Generation** | `gpt-4o-mini` with temperature 0.2 for high precision. |
+| 7 | **LLM Generation** | Google Gemini (`gemini-flash-latest`) with temperature 0.2 for high precision. |
 
 The `retrieval_stats` field in the chat response exposes pipeline metrics:
 ```json
@@ -153,7 +153,7 @@ The RAG Generator ([rag_generator.py](file:///Users/prashanna/Desktop/palm_task/
 
 ### 1. Environment Configuration
 
-Copy `.env.example` to `.env` and fill in your OpenAI and Pinecone SaaS credentials:
+Copy `.env.example` to `.env` and fill in your API credentials:
 
 ```bash
 cp .env.example .env
@@ -161,7 +161,8 @@ cp .env.example .env
 
 Edit `.env`:
 ```env
-OPENAI_API_KEY=sk-proj-...
+OPENAI_API_KEY=sk-proj-...          # Required for embeddings
+GEMINI_API_KEY=AQ.Ab8RN6...          # Required for chat/booking LLM
 PINECONE_API_KEY=pcsk_...
 PINECONE_INDEX_NAME=palm-rag
 DATABASE_URL=postgresql+asyncpg://palm:palm@localhost:5432/palm

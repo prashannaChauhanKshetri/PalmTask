@@ -26,7 +26,9 @@ async def test_rag_generator_full_pipeline() -> None:
     """End-to-end pipeline test with score filtering, expansion, and re-ranking."""
     mock_openai = AsyncMock()
     mock_openai.get_embeddings = AsyncMock(return_value=[[0.1] * 1536])
-    mock_openai.generate_chat_completion = AsyncMock(
+
+    mock_gemini = AsyncMock()
+    mock_gemini.generate_chat_completion = AsyncMock(
         return_value="PalmMind AI provides automated data search solutions."
     )
 
@@ -39,7 +41,7 @@ async def test_rag_generator_full_pipeline() -> None:
         ]
     )
 
-    rag = RAGGenerator(openai_client=mock_openai, pinecone_client=mock_pinecone)
+    rag = RAGGenerator(openai_client=mock_openai, gemini_client=mock_gemini, pinecone_client=mock_pinecone)
 
     history = [ChatTurn(role="user", content="What is PalmMind AI?")]
     user_message = "Can you elaborate on its features?"
@@ -57,7 +59,7 @@ async def test_rag_generator_full_pipeline() -> None:
     assert all(s.score >= 0.65 for s in response.sources)
 
     # Verify system prompt contained strict guardrail instructions
-    call_args = mock_openai.generate_chat_completion.call_args[1]
+    call_args = mock_gemini.generate_chat_completion.call_args[1]
     messages = call_args["messages"]
     system_msg = messages[0]["content"]
 
@@ -151,7 +153,9 @@ async def test_contextual_window_expansion() -> None:
     """Contextual window should fetch neighboring chunks via metadata filter."""
     mock_openai = AsyncMock()
     mock_openai.get_embeddings = AsyncMock(return_value=[[0.1] * 1536])
-    mock_openai.generate_chat_completion = AsyncMock(return_value="Answer with context.")
+
+    mock_gemini = AsyncMock()
+    mock_gemini.generate_chat_completion = AsyncMock(return_value="Answer with context.")
 
     # Initial query returns chunk 2 of doc1
     initial_result = _make_result("doc1", 2, 0.90, "Core chunk content.")
@@ -173,7 +177,7 @@ async def test_contextual_window_expansion() -> None:
     mock_pinecone = MagicMock()
     mock_pinecone.query_similarity = MagicMock(side_effect=mock_query_similarity)
 
-    rag = RAGGenerator(openai_client=mock_openai, pinecone_client=mock_pinecone)
+    rag = RAGGenerator(openai_client=mock_openai, gemini_client=mock_gemini, pinecone_client=mock_pinecone)
 
     response = await rag.generate_response(
         user_message="Tell me more",
@@ -194,7 +198,9 @@ async def test_response_includes_retrieval_stats() -> None:
     """RAGResponse should carry semantic search pipeline statistics."""
     mock_openai = AsyncMock()
     mock_openai.get_embeddings = AsyncMock(return_value=[[0.1] * 1536])
-    mock_openai.generate_chat_completion = AsyncMock(return_value="Test answer.")
+
+    mock_gemini = AsyncMock()
+    mock_gemini.generate_chat_completion = AsyncMock(return_value="Test answer.")
 
     mock_pinecone = MagicMock()
     mock_pinecone.query_similarity = MagicMock(
@@ -204,7 +210,7 @@ async def test_response_includes_retrieval_stats() -> None:
         ]
     )
 
-    rag = RAGGenerator(openai_client=mock_openai, pinecone_client=mock_pinecone)
+    rag = RAGGenerator(openai_client=mock_openai, gemini_client=mock_gemini, pinecone_client=mock_pinecone)
 
     response = await rag.generate_response(
         user_message="test",

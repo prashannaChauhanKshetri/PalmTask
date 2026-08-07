@@ -1,4 +1,4 @@
-"""Live integration test script verifying PostgreSQL, Redis, OpenAI, and Pinecone."""
+"""Live integration test script verifying PostgreSQL, Redis, OpenAI (embeddings), Gemini (chat), and Pinecone."""
 
 import asyncio
 from uuid import uuid4
@@ -64,17 +64,23 @@ async def test_redis() -> None:
 
 
 async def test_openai() -> None:
-    print("\n--- 🤖 Testing OpenAI API (Embeddings & GPT-4o-mini) ---")
+    print("\n--- 🤖 Testing OpenAI API (Embeddings Only) ---")
     openai_client = OpenAIClient()
 
     embeddings = await openai_client.get_embeddings(["PalmMind AI RAG Backend Test"])
     print(f"  ✅ Generated Embedding Vector: length={len(embeddings[0])} dimensions")
 
-    chat_reply = await openai_client.generate_chat_completion(
-        messages=[{"role": "user", "content": "Reply with 'OpenAI Live Test Successful!'"}],
+
+async def test_gemini() -> None:
+    print("\n--- 🌟 Testing Google Gemini API (Chat Completions) ---")
+    from app.clients.gemini_client import GeminiClient
+    gemini_client = GeminiClient()
+
+    chat_reply = await gemini_client.generate_chat_completion(
+        messages=[{"role": "user", "content": "Reply with 'Gemini Live Test Successful!'"}],
         temperature=0.0,
     )
-    print(f"  ✅ GPT-4o-mini Response: {chat_reply}")
+    print(f"  ✅ Gemini Response: {chat_reply}")
 
 
 def test_pinecone() -> None:
@@ -95,9 +101,10 @@ async def main() -> None:
     await test_postgres()
     await test_redis()
     await test_openai()
+    await test_gemini()
     test_pinecone()
     print("\n==================================================")
-    print("  🎉 ALL 4 SERVICES (Postgres, Redis, OpenAI, Pinecone) WORKING LOCALLY!")
+    print("  🎉 ALL 5 SERVICES (Postgres, Redis, OpenAI, Gemini, Pinecone) WORKING LOCALLY!")
     print("==================================================")
 
 
