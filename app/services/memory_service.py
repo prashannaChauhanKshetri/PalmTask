@@ -62,11 +62,6 @@ class PartialBookingState(BaseModel):
         return missing
 
 
-# In-memory storage fallback for local manual testing when Redis container is starting up
-_fallback_chat_memory: dict[str, list[ChatTurn]] = {}
-_fallback_booking_memory: dict[str, PartialBookingState] = {}
-
-
 class MemoryService:
     """Service managing windowed chat history and partial booking state in Redis (with in-memory fallback)."""
 
@@ -93,20 +88,17 @@ class MemoryService:
     async def get_history(self, session_id: UUID | str) -> list[ChatTurn]:
         """Retrieve windowed conversation turns for a session."""
         key = self._chat_key(session_id)
-        try:
-            raw_items = await self.redis.lrange(key, 0, -1)
-            await self.redis.expire(key, self.ttl_seconds)
+        raw_items = await self.redis.lrange(key, 0, -1)
+        await self.redis.expire(key, self.ttl_seconds)
 
-            turns: list[ChatTurn] = []
-            for item in raw_items:
-                try:
-                    data = json.loads(item)
-                    turns.append(ChatTurn.model_validate(data))
-                except Exception:
-                    pass
-            return turns
-        except Exception:
-            return _fallback_chat_memory.get(str(session_id), [])
+        turns: list[ChatTurn] = []
+        for item in raw_items:
+            try:
+                data = json.loads(item)
+                turns.append(ChatTurn.model_validate(data))
+            except Exception:
+                pass
+        return turns
 
     async def add_turn(
         self, session_id: UUID | str, role: Literal["user", "assistant"], content: str
@@ -116,31 +108,22 @@ class MemoryService:
         turn = ChatTurn(role=role, content=content)
         turn_json = turn.model_dump_json()
 
-        try:
-            async with self.redis.pipeline(transaction=True) as pipe:
-                pipe.rpush(key, turn_json)
-                pipe.ltrim(key, -self.window_size, -1)
-                pipe.expire(key, self.ttl_seconds)
-                await pipe.execute()
-        except Exception:
-            if str(session_id) not in _fallback_chat_memory:
-                _fallback_chat_memory[str(session_id)] = []
-            _fallback_chat_memory[str(session_id)].append(turn)
-            _fallback_chat_memory[str(session_id)] = _fallback_chat_memory[str(session_id)][-self.window_size:]
+        async with self.redis.pipeline(transaction=True) as pipe:
+            pipe.rpush(key, turn_json)
+            pipe.ltrim(key, -self.window_size, -1)
+            pipe.expire(key, self.ttl_seconds)
+            await pipe.execute()
 
         return turn
 
     async def get_booking_state(self, session_id: UUID | str) -> PartialBookingState:
         """Retrieve ongoing partial booking state for a session."""
         key = self._booking_key(session_id)
-        try:
-            raw_data = await self.redis.get(key)
-            if not raw_data:
-                return PartialBookingState()
-            data = json.loads(raw_data)
-            return PartialBookingState.model_validate(data)
-        except Exception:
-            return _fallback_booking_memory.get(str(session_id), PartialBookingState())
+        raw_data = await self.redis.get(key)
+        if not raw_data:
+            return PartialBookingState()
+        data = json.loads(raw_data)
+        return PartialBookingState.model_validate(data)
 
     async def save_booking_state(
         self, session_id: UUID | str, state: PartialBookingState
@@ -148,15 +131,9 @@ class MemoryService:
         """Save or update partial booking state."""
         key = self._booking_key(session_id)
         state_json = state.model_dump_json()
-        try:
-            await self.redis.set(key, state_json, ex=self.ttl_seconds)
-        except Exception:
-            _fallback_booking_memory[str(session_id)] = state
+        await self.redis.set(key, state_json, ex=self.ttl_seconds)
 
     async def clear_booking_state(self, session_id: UUID | str) -> None:
         """Delete partial booking state after successful booking confirmation."""
         key = self._booking_key(session_id)
-        try:
-            await self.redis.delete(key)
-        except Exception:
-            _fallback_booking_memory.pop(str(session_id), None)
+        await self.redis.delete(key)

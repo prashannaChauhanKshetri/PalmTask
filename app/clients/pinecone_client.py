@@ -24,17 +24,6 @@ class VectorSearchResult:
     metadata: dict[str, Any]
 
 
-_local_vector_store: list[tuple[str, list[float], dict[str, Any]]] = []
-
-
-def _cosine_similarity(v1: list[float], v2: list[float]) -> float:
-    """Compute cosine similarity between two float vectors."""
-    dot = sum(a * b for a, b in zip(v1, v2))
-    norm1 = math.sqrt(sum(a * a for a in v1)) or 1.0
-    norm2 = math.sqrt(sum(b * b for b in v2)) or 1.0
-    return dot / (norm1 * norm2)
-
-
 class PineconeClient:
     """Client wrapper for Pinecone Serverless vector database with in-memory fallback."""
 
@@ -60,27 +49,18 @@ class PineconeClient:
         vectors: list[tuple[str, list[float], dict[str, Any]]],
         batch_size: int = 100,
     ) -> None:
-        """Batch upsert vectors and metadata into Pinecone index with local fallback."""
+        """Batch upsert vectors and metadata into Pinecone index."""
         if not vectors:
             return
 
-        # Keep a copy in local vector store for offline/fallback retrieval
-        _local_vector_store.extend(vectors)
-
-        try:
-            formatted_vectors = [
-                {"id": vid, "values": emb, "metadata": meta}
-                for vid, emb, meta in vectors
-            ]
-            for i in range(0, len(formatted_vectors), batch_size):
-                batch = formatted_vectors[i : i + batch_size]
-                self.index.upsert(vectors=batch, namespace=self.NAMESPACE)
-            logger.info("Pinecone upsert completed", extra={"count": len(vectors), "namespace": self.NAMESPACE})
-        except Exception as err:
-            logger.warning(
-                "Pinecone upsert fallback to local vector store",
-                extra={"error": str(err), "count": len(vectors)},
-            )
+        formatted_vectors = [
+            {"id": vid, "values": emb, "metadata": meta}
+            for vid, emb, meta in vectors
+        ]
+        for i in range(0, len(formatted_vectors), batch_size):
+            batch = formatted_vectors[i : i + batch_size]
+            self.index.upsert(vectors=batch, namespace=self.NAMESPACE)
+        logger.info("Pinecone upsert completed", extra={"count": len(vectors), "namespace": self.NAMESPACE})
 
     def query_similarity(
         self,
@@ -89,63 +69,44 @@ class PineconeClient:
         filter_dict: dict[str, Any] | None = None,
     ) -> list[VectorSearchResult]:
         """Query Pinecone index for top_k nearest neighbor vectors by cosine similarity."""
-        try:
-            response = self.index.query(
-                vector=query_embedding,
-                top_k=top_k,
-                include_metadata=True,
-                filter=filter_dict,
-                namespace=self.NAMESPACE,
-            )
+        response = self.index.query(
+            vector=query_embedding,
+            top_k=top_k,
+            include_metadata=True,
+            filter=filter_dict,
+            namespace=self.NAMESPACE,
+        )
 
-            results: list[VectorSearchResult] = []
-            for match in response.get("matches", []):
-                meta = match.get("metadata", {})
-                results.append(
-                    VectorSearchResult(
-                        vector_id=match["id"],
-                        score=float(match["score"]),
-                        document_id=str(meta.get("document_id", "")),
-                        chunk_index=int(meta.get("chunk_index", 0)),
-                        text_preview=str(meta.get("text_preview", "")),
-                        metadata=meta,
-                    )
+        results: list[VectorSearchResult] = []
+        for match in response.get("matches", []):
+            meta = match.get("metadata", {})
+            results.append(
+                VectorSearchResult(
+                    vector_id=match["id"],
+                    score=float(match["score"]),
+                    document_id=str(meta.get("document_id", "")),
+                    chunk_index=int(meta.get("chunk_index", 0)),
+                    text_preview=str(meta.get("text_preview", "")),
+                    metadata=meta,
                 )
-
-            if results:
-                return results
-        except Exception as err:
-            logger.warning("Pinecone query fallback to local vector store", extra={"error": str(err)})
-
-        # Local vector store fallback calculation
-        matches: list[tuple[float, str, list[float], dict[str, Any]]] = []
-        for vid, emb, meta in _local_vector_store:
-            # Apply metadata filtering if provided
-            if filter_dict:
-                match_filter = True
-                for fk, fv in filter_dict.items():
-                    if isinstance(fv, dict) and "$eq" in fv:
-                        if meta.get(fk) != fv["$eq"]:
-                            match_filter = False
-                    elif meta.get(fk) != fv:
-                        match_filter = False
-                if not match_filter:
-                    continue
-
-            score = _cosine_similarity(query_embedding, emb)
-            matches.append((score, vid, emb, meta))
-
-        matches.sort(key=lambda x: x[0], reverse=True)
-        top_matches = matches[:top_k]
-
-        return [
-            VectorSearchResult(
-                vector_id=vid,
-                score=score,
-                document_id=str(meta.get("document_id", "")),
-                chunk_index=int(meta.get("chunk_index", 0)),
-                text_preview=str(meta.get("text_preview", "")),
-                metadata=meta,
             )
-            for score, vid, emb, meta in top_matches
-        ]
+
+        return results
+
+    def fetch_by_id(self, vector_id: str) -> VectorSearchResult | None:
+        """Fetch a specific vector exactly by its ID."""
+        response = self.index.fetch(ids=[vector_id], namespace=self.NAMESPACE)
+        vectors = response.get("vectors", {})
+        if vector_id not in vectors:
+            return None
+            
+        match = vectors[vector_id]
+        meta = match.get("metadata", {})
+        return VectorSearchResult(
+            vector_id=match["id"],
+            score=1.0,
+            document_id=str(meta.get("document_id", "")),
+            chunk_index=int(meta.get("chunk_index", 0)),
+            text_preview=str(meta.get("text_preview", "")),
+            metadata=meta,
+        )

@@ -9,7 +9,7 @@ from uuid import UUID
 import dateparser
 from email_validator import EmailNotValidError, validate_email
 
-from app.clients.gemini_client import GeminiClient
+from app.clients.openai_client import OpenAIClient
 from app.core.exceptions import BookingValidationError
 from app.core.logging import get_logger
 from app.models.booking import Booking
@@ -38,11 +38,11 @@ class BookingService:
         self,
         booking_repo: BookingRepository,
         memory_service: MemoryService,
-        gemini_client: GeminiClient | None = None,
+        openai_client: OpenAIClient | None = None,
     ) -> None:
         self.repo = booking_repo
         self.memory = memory_service
-        self.gemini_client = gemini_client or GeminiClient()
+        self.openai_client = openai_client or OpenAIClient()
 
     async def detect_intent_and_extract(
         self,
@@ -106,11 +106,18 @@ class BookingService:
             },
         }
 
-        # Call Gemini with json_schema structured output
-        raw_llm_output = await self.gemini_client.generate_chat_completion(
+        # Call OpenAI with json_schema structured output
+        raw_llm_output = await self.openai_client.generate_chat_completion(
             messages=extraction_prompt,
             temperature=0.0,
-            response_schema=booking_schema,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "booking_extraction",
+                    "schema": booking_schema,
+                    "strict": True,
+                },
+            },
         )
 
         # Parse LLM output into Pydantic model

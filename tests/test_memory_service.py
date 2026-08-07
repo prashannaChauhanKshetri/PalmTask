@@ -23,6 +23,10 @@ async def test_memory_add_and_get_history() -> None:
     mock_redis.pipeline = MagicMock(return_value=mock_pipeline)
     mock_pipeline.__aenter__ = AsyncMock(return_value=mock_pipeline)
     mock_pipeline.__aexit__ = AsyncMock(return_value=None)
+    mock_pipeline.rpush = MagicMock()
+    mock_pipeline.ltrim = MagicMock()
+    mock_pipeline.expire = MagicMock()
+    mock_pipeline.execute = AsyncMock()
 
     service = MemoryService(redis_client=mock_redis)
     session_id = uuid.uuid4()

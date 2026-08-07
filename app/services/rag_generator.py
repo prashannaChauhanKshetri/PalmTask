@@ -15,7 +15,6 @@ No LangChain or RetrievalQAChain abstractions — fully hand-crafted.
 from dataclasses import dataclass
 from typing import Any
 
-from app.clients.gemini_client import GeminiClient
 from app.clients.openai_client import OpenAIClient
 from app.clients.pinecone_client import PineconeClient, VectorSearchResult
 from app.core.config import get_settings
@@ -58,12 +57,10 @@ class RAGGenerator:
     def __init__(
         self,
         openai_client: OpenAIClient | None = None,
-        gemini_client: GeminiClient | None = None,
         pinecone_client: PineconeClient | None = None,
     ) -> None:
         settings = get_settings()
         self.openai_client = openai_client or OpenAIClient()
-        self.gemini_client = gemini_client or GeminiClient()
         self.pinecone_client = pinecone_client or PineconeClient()
         self.top_k = settings.rag_top_k
         self.score_threshold = settings.rag_score_threshold
@@ -136,19 +133,13 @@ class RAGGenerator:
                         seen.add(key)
                         neighbor_requests.append((r.document_id, neighbor_idx))
 
-        # Fetch neighbors via metadata filter queries
+        # Fetch neighbors via exact ID lookup
         for doc_id, chunk_idx in neighbor_requests:
             try:
-                neighbor_results = self.pinecone_client.query_similarity(
-                    query_embedding=[0.0] * 1536,  # Dummy vector — we filter by metadata
-                    top_k=1,
-                    filter_dict={
-                        "document_id": {"$eq": doc_id},
-                        "chunk_index": {"$eq": chunk_idx},
-                    },
-                )
-                for nr in neighbor_results:
-                    expanded.append(nr)
+                vector_id = f"{doc_id}_{chunk_idx}"
+                neighbor_res = self.pinecone_client.fetch_by_id(vector_id)
+                if neighbor_res:
+                    expanded.append(neighbor_res)
             except Exception:
                 logger.warning(
                     "Failed to fetch neighboring chunk",
@@ -244,7 +235,7 @@ Your mission is to assist users by answering their questions accurately based st
             4. Contextual window expansion (neighboring chunks)
             5. Re-ranking by relevance with document grouping
             6. System prompt assembly with guardrails
-            7. LLM generation via Google Gemini
+            7. LLM generation via OpenAI
 
         Args:
             user_message: Current user input message.
@@ -322,8 +313,8 @@ Your mission is to assist users by answering their questions accurately based st
         # Append current user query
         messages.append({"role": "user", "content": user_message})
 
-        # Call Google Gemini for RAG answer generation
-        answer = await self.gemini_client.generate_chat_completion(
+        # Call OpenAI for RAG answer generation
+        answer = await self.openai_client.generate_chat_completion(
             messages=messages,
             temperature=0.2,  # Low temperature for high precision & low hallucination
         )
